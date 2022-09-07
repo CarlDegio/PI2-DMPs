@@ -1,5 +1,5 @@
 import numpy as np
-from dmp import DMPs
+from DMP_System import SystemOptions,DMPOptions,DMPSystem
 import functools
 import matplotlib.pyplot as plt
 
@@ -9,42 +9,43 @@ class Trajectory:
     可以修改，使其包含多维DMP，还需要对应的生成奖励
     """
 
-    def __init__(self, n_dmps=1, start_time=0.0, end_time=2.0, start_dmp_time=0.0, end_dmp_time=1.0, n_bfs=10, tau=1,
-                 dt=0.01):
-        self.dmps_systems = [DMPs(start_time=start_time, end_time=end_time, start_dmp_time=start_dmp_time,
-                                  end_dmp_time=end_dmp_time, n_bfs=n_bfs, tau=tau)]
+    def __init__(self, sys_option: SystemOptions, dmp_option: DMPOptions, n_dmps=1):
 
-        self.n_bfs = n_bfs
-        self.length = int((end_time - start_time) / dt)
+        self.dmp_systems = [DMPSystem(sys_option, dmp_option)]
+
+        self.n_bfs = sys_option.nonlinearSys_n_bfs
+        self.dt=sys_option.dt
         self.n_dmps = n_dmps
-        self.start_dmp_index = int((start_dmp_time - start_time) / dt)
-        self.end_dmp_index = int((end_dmp_time - start_time) / dt)
+
+        self.length = int((dmp_option.end_sys_time - dmp_option.start_sys_time) / self.dt)
+        self.start_dmp_index = int((dmp_option.start_dmp_time- dmp_option.start_sys_time) / self.dt)
+        self.end_dmp_index = int((dmp_option.end_dmp_time - dmp_option.start_sys_time) / self.dt)
         self.y = np.zeros([n_dmps, self.length])  #
         self.yd = np.zeros([n_dmps, self.length])  #
         self.ydd = np.zeros([n_dmps, self.length])  #
         self.t = np.zeros([n_dmps, self.length])  #
         self.x = np.zeros([n_dmps, self.length])  #
-        self.mean_canonical = self.dmps_systems[0].f_term.mean_canonical  #
-        self.weight = np.zeros([n_dmps, n_bfs])  # 基础权重，对一个rollout是一样的
-        self.eps = np.zeros([n_dmps, self.length, n_bfs])  # 实际权重为基础权重+eps
-        self.psi = np.zeros([n_dmps, self.length, n_bfs])  #
-        self.g_term = np.zeros([n_dmps, self.length, n_bfs])  #
+        self.mean_canonical = self.dmp_systems[0].nonlinear_sys.basic_fun_mean_canonical  #
+        self.weight = np.zeros([n_dmps, self.n_bfs])  # 基础权重，对一个rollout是一样的
+        self.eps = np.zeros([n_dmps, self.length, self.n_bfs])  # 实际权重为基础权重+eps
+        self.psi = np.zeros([n_dmps, self.length, self.n_bfs])  #
+        self.g_term = np.zeros([n_dmps, self.length, self.n_bfs])  #
         self.r_t = np.zeros(self.length)  #
         self.r_end = np.zeros(n_dmps)  #
 
     def log_step(self, tick):
         for sys_index in range(self.n_dmps):
-            self.y[sys_index, tick] = self.dmps_systems[sys_index].y
-            self.yd[sys_index, tick] = self.dmps_systems[sys_index].yd
-            self.ydd[sys_index, tick] = self.dmps_systems[sys_index].ydd
-            self.t[sys_index, tick] = self.dmps_systems[sys_index].t
-            self.x[sys_index, tick] = self.dmps_systems[sys_index].f_term.x
-            self.psi[sys_index, tick] = self.dmps_systems[sys_index].f_term.get_psi()
-            self.g_term[sys_index, tick] = self.dmps_systems[sys_index].calc_g()
+            self.y[sys_index, tick] = self.dmp_systems[sys_index].y
+            self.yd[sys_index, tick] = self.dmp_systems[sys_index].yd
+            self.ydd[sys_index, tick] = self.dmp_systems[sys_index].ydd
+            self.t[sys_index, tick] = self.dmp_systems[sys_index].t
+            self.x[sys_index, tick] = self.dmp_systems[sys_index].nonlinear_sys.x
+            self.psi[sys_index, tick] = self.dmp_systems[sys_index].nonlinear_sys.get_psi_now()
+            self.g_term[sys_index, tick] = self.dmp_systems[sys_index].calc_g()
 
     def run_step(self, tick):
         for sys_index in range(self.n_dmps):
-            self.dmps_systems[sys_index].run_step(has_dmp=(self.start_dmp_index <= tick < self.end_dmp_index))
+            self.dmp_systems[sys_index].run_step(has_dmp=(self.start_dmp_index <= tick < self.end_dmp_index))
 
     def calc_cost(self):
         Q = 1000
@@ -52,10 +53,10 @@ class Trajectory:
         for sys_index in range(self.n_dmps):
             for i in range(self.start_dmp_index, self.end_dmp_index):
                 Meps = self.g_term[sys_index, i].dot(self.eps[sys_index, i]) * self.g_term[sys_index, i] / (
-                            np.linalg.norm(self.g_term[sys_index, i]) ** 2)
+                        np.linalg.norm(self.g_term[sys_index, i]) ** 2)
                 norm_term = 0.5 * R * np.linalg.norm(self.weight + Meps) ** 2
                 self.r_t[i] += 0.5 * self.ydd[sys_index, i] ** 2 * Q + norm_term
-                if i == 30 and self.y[sys_index, i] != 0.1:
+                if i == 6 and self.y[sys_index, i] != 0.1:
                     self.r_t[i] += 1e10 * (self.y[0, i] - 0.1) ** 2
             self.r_end += 0.5 * (self.yd[sys_index, self.end_dmp_index - 1]) ** 2 * 1000 + 0.5 * (
                     self.y[sys_index, self.end_dmp_index - 1] - 1) ** 2 * 1000
@@ -72,7 +73,7 @@ def cmp(self: Trajectory, other: Trajectory):
 
 
 class ReplayBuffer:
-    def __init__(self, size=10, n_reuse=5):  # 对于样例任务，n_reuse会导致buffer前几个锁定且更新占优，就会使dtheta变成非零常数
+    def __init__(self, size=10, n_reuse=0):  # 对于样例任务，n_reuse会导致buffer前几个锁定且更新占优，就会使dtheta变成非零常数
         self.buffer = []
         self.size = size
         self.n_reuse = n_reuse
@@ -99,26 +100,28 @@ class ReplayBuffer:
 
 
 class PI2LearningPer:
-    def __init__(self, n_dmps=1, num_basic_function=9, start_pos=0, goal_pos=1, start_time=0.0, end_time=2.0,
-                 start_dmp_time=0.0, end_dmp_time=1.0, std=20, dt=0.01):
+    def __init__(self, n_dmps=1, std=20):
         """
         只将噪声添加到强度最大的基函数
         """
+        self.system_option = SystemOptions()
+        self.dmp_option = DMPOptions()
+
         self.n_dmps = n_dmps  #
-        self.n_bfs = num_basic_function
-        self.start_pos = start_pos
-        self.goal_pos = goal_pos
-        self.start_time = start_time
-        self.end_time = end_time
-        self.start_dmp_time = start_dmp_time
-        self.end_dmp_time = end_dmp_time
-        self.start_dmp_index = int((start_dmp_time - start_time) / dt)
-        self.end_dmp_index = int((end_dmp_time - start_time) / dt)
+        self.n_bfs = self.system_option.nonlinearSys_n_bfs
+        self.start_pos = self.system_option.start
+        self.goal_pos = self.system_option.goal
+        self.start_time = self.dmp_option.start_sys_time
+        self.end_time = self.dmp_option.end_sys_time
+        self.start_dmp_time = self.dmp_option.start_dmp_time
+        self.end_dmp_time = self.dmp_option.end_dmp_time
+        self.dt = self.system_option.dt
+        self.start_dmp_index = int((self.start_dmp_time - self.start_time) / self.dt)
+        self.end_dmp_index = int((self.end_dmp_time - self.start_time) / self.dt)
         self.std = std
         self.repetitions = 10
         self.updates = 300
         self.n_reuse = 0
-        self.dt = dt
 
         self.weight = np.zeros([n_dmps, self.n_bfs])
         self.length = int((self.end_time - self.start_time) / self.dt)
@@ -128,11 +131,14 @@ class PI2LearningPer:
         self.P = np.zeros([self.dmp_length, self.repetitions])
         self.buffer = ReplayBuffer(size=self.repetitions, n_reuse=self.n_reuse)
 
+        self.mean_tune = np.zeros(self.n_bfs)
+        self.last_dtheta=np.zeros(self.n_bfs)
+
     def run(self):
         for i in range(self.updates):
             if i % 10 == 0:
                 traj_eval = self.rollout(0)
-                print(traj_eval.r_t.sum() + traj_eval.r_end)
+                print('eval_result', traj_eval.r_t.sum() + traj_eval.r_end)
             if i == self.updates - 1:
                 traj_eval = self.rollout(0)
                 print(self.weight)
@@ -142,6 +148,11 @@ class PI2LearningPer:
             noise_gain = max((self.updates - i) / self.updates, 0.1)
 
             while 1:
+                #mean_tune=np.array(input().split(' ')) # 人为修改噪声均值，使权值变化更快
+                mean_tune=np.array([0,0,0,0,0,0,0,0,0,0])
+                self.mean_tune=[]
+                for num in mean_tune:
+                    self.mean_tune.append(float(num))
                 flag = self.buffer.append(self.rollout(noise_gain))
                 if flag:
                     break
@@ -149,12 +160,14 @@ class PI2LearningPer:
             self.pi2_update(10)
             self.buffer.sort()
             self.buffer.pop()
+        np.savetxt("weight.txt", self.weight.reshape(-1, 1))
 
     def rollout(self, noise_gain):
         std_eps = noise_gain * self.std
-        traj = Trajectory(n_dmps=self.n_dmps, dt=self.dt, n_bfs=self.n_bfs)
+        traj = Trajectory(self.system_option,self.dmp_option,n_dmps=self.n_dmps)
         last_index = -1  # time是同时的，所以会同时切换
         EPS = np.zeros([self.n_dmps, self.n_bfs])
+        # print('weight_eps:',end='')
         for t in range(self.length):
             traj.log_step(t)
             index = traj.psi[0, t].argmax()
@@ -162,14 +175,18 @@ class PI2LearningPer:
                 EPS = np.zeros([self.n_dmps, self.n_bfs])
                 last_index = index
                 for sys_index in range(self.n_dmps):
-                    eps = np.random.normal(loc=0.0, scale=std_eps)  # 仅扰动当前时间activate的base function
+                    eps = np.random.normal(loc=self.mean_tune[index], scale=1.0)  # 仅扰动当前时间activate的base function
+                    # print(eps,end=' ')
+                    eps=eps*std_eps
                     EPS[sys_index, index] = eps
-                    traj.dmps_systems[sys_index].set_weight(self.weight + EPS[sys_index])
+                    traj.dmp_systems[sys_index].set_weight(self.weight + EPS[sys_index])
                 traj.eps[:, t, :] = EPS
             else:
                 traj.eps[:, t, :] = EPS
             traj.run_step(t)
         traj.calc_cost()
+        # print()
+        # print(f'train_result_{len(self.buffer)}', traj.r_t.sum() + traj.r_end)
         return traj
 
     def pi2_update(self, h=10):
@@ -198,7 +215,8 @@ class PI2LearningPer:
         W = W / W.sum(0)
         for sys_index in range(self.n_dmps):
             dtheta = (W * dtheta[sys_index]).sum(0)
-        self.weight += dtheta
+        self.weight += 0.99*self.last_dtheta+dtheta # Momentum，使权值大移动时更快
+        self.last_dtheta=dtheta
 
 
 if __name__ == "__main__":

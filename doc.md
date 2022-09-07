@@ -1,5 +1,5 @@
 # PI2-DMPs
-使用强化学习的方法PI2更新DMPs以实现轨迹模仿。
+使用强化学习的方法PI2更新DMPs以实现轨迹模仿。代码部分主要参考材料[2]，内含PI2的matlab代码
 
 ## DMPs部分
 
@@ -119,7 +119,7 @@ $\delta\pmb{\theta}$是一个二维的矩阵，按时刻和基函数下标分。
 
 式五中就按时间求和，$\delta\pmb{\theta}$仅剩余$n_{bfs}$大小的一维矢量，式六进行更新。
 
-代码中用`dtheta`代表$\delta\pmb{\theta}$。
+代码中用`dtheta`代表$\delta\pmb{\theta}$，用weight代表$\pmb{\theta}$
 
 ### trick
 

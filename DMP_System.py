@@ -142,7 +142,7 @@ class NonlinearSystem:
 class DMPOptions:
     def __init__(self):
         self.start_sys_time = 0.0
-        self.end_sys_time = 1.0
+        self.end_sys_time = 2.0
         self.start_dmp_time = 0.0
         self.end_dmp_time = 1.0
 
