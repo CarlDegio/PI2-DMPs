@@ -1,0 +1,17 @@
+% The protocol file has the following columns:
+%
+% start_x start_y goal_x goal_y duration std repetitions cost_function updates
+%
+% where
+% start_x, start_y: the start position of the DMP
+% goal_x, goal_y  : the goal position of the DMP
+% duration        : the duration of the DMP
+% std             : standard deviation of added noise for parameters
+% repetitions     : repetitions of movement before learning update
+% cost_function   : name of the cost function to use
+% updates         : number of PI2 updates to perform
+% basis_noise     : only add noise to the max active basis function
+% n_reuse         : number of re-used trials per update
+
+0  0  1  1  0.5  20  10  acc2  100  1  5
+
